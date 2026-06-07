@@ -1,7 +1,7 @@
-import { Bell, Search, Menu, HelpCircle } from 'lucide-react';
+import { Bell, Search, Menu, HelpCircle, AlertTriangle, ImageOff } from 'lucide-react';
 import { useUIStore } from '@/store/uiStore';
 import { useDishStore } from '@/store/dishStore';
-import { AlertTriangle, ImageOff } from 'lucide-react';
+import { StoreSelector } from './StoreSelector';
 
 const pageTitles: Record<string, string> = {
   dashboard: '数据概览',
@@ -15,13 +15,13 @@ const pageTitles: Record<string, string> = {
 };
 
 export const Header = () => {
-  const { currentPage, toggleSidebar } = useUIStore();
-  const { getMissingImages, getMissingPrices, getLowStockDishes } = useDishStore();
+  const { currentPage, toggleSidebar, currentStoreId } = useUIStore();
+  const { getMissingImageCount, getMissingPriceCount, getSoldOutOnSaleCount } = useDishStore();
 
-  const missingImages = getMissingImages();
-  const missingPrices = getMissingPrices();
-  const lowStock = getLowStockDishes();
-  const totalIssues = missingImages.length + missingPrices.length + lowStock.length;
+  const missingImages = getMissingImageCount();
+  const missingPrices = getMissingPriceCount(currentStoreId);
+  const soldOutOnSale = getSoldOutOnSaleCount(currentStoreId);
+  const totalIssues = missingImages + missingPrices + soldOutOnSale;
 
   return (
     <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-earth-100">
@@ -47,6 +47,8 @@ export const Header = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <StoreSelector />
+
           <div className="relative hidden md:block">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-earth-400" />
             <input
@@ -82,22 +84,22 @@ export const Header = () => {
 
       {totalIssues > 0 && (
         <div className="px-6 py-2 bg-amber-50/50 border-t border-amber-100 flex items-center gap-4 text-sm">
-          {missingImages.length > 0 && (
+          {missingImages > 0 && (
             <div className="flex items-center gap-1.5 text-amber-700">
               <ImageOff className="w-4 h-4" />
-              <span>缺图菜品: {missingImages.length}</span>
+              <span>缺图菜品: {missingImages}</span>
             </div>
           )}
-          {missingPrices.length > 0 && (
+          {missingPrices > 0 && (
             <div className="flex items-center gap-1.5 text-amber-700">
               <span className="font-semibold">¥</span>
-              <span>缺价菜品: {missingPrices.length}</span>
+              <span>缺价菜品: {missingPrices}</span>
             </div>
           )}
-          {lowStock.length > 0 && (
+          {soldOutOnSale > 0 && (
             <div className="flex items-center gap-1.5 text-red-600">
               <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-              <span>库存预警: {lowStock.length}</span>
+              <span>在售售罄: {soldOutOnSale}</span>
             </div>
           )}
         </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Star,
   MessageSquare,
@@ -10,9 +10,11 @@ import {
 } from 'lucide-react';
 import { useReviewStore } from '@/store/reviewStore';
 import { useDishStore } from '@/store/dishStore';
+import { useUIStore } from '@/store/uiStore';
 import { cn, formatDate } from '@/utils/format';
 
 export const Reviews = () => {
+  const { currentStoreId } = useUIStore();
   const {
     reviews,
     filterRating,
@@ -24,15 +26,53 @@ export const Reviews = () => {
     toggleFeatured,
     getFilteredReviews,
   } = useReviewStore();
-  const { dishes, toggleSignature, getLowStockDishes } = useDishStore();
+  const { dishes, toggleSignature, getDishPrice, getDishById } = useDishStore();
 
   const [showFilter, setShowFilter] = useState(false);
 
-  const filteredReviews = getFilteredReviews();
+  const filteredReviews = useMemo(() => {
+    let result = getFilteredReviews();
 
-  const getDishById = (id: string) => dishes.find((d) => d.id === id);
+    if (currentStoreId !== 'all') {
+      result = result.filter((review) => {
+        const dish = getDishById(review.dishId);
+        if (!dish) return false;
+        return dish.storeItems.some((item) => item.storeId === currentStoreId);
+      });
+    }
 
-  const signatureDishes = dishes.filter((d) => d.isSignature);
+    return result;
+  }, [getFilteredReviews, currentStoreId, getDishById]);
+
+  const signatureDishes = useMemo(() => {
+    let filtered = dishes.filter((d) => d.isSignature);
+    if (currentStoreId !== 'all') {
+      filtered = filtered.filter((d) =>
+        d.storeItems.some((item) => item.storeId === currentStoreId)
+      );
+    }
+    return filtered;
+  }, [dishes, currentStoreId]);
+
+  const storeDishes = useMemo(() => {
+    if (currentStoreId === 'all') return dishes;
+    return dishes.filter((d) =>
+      d.storeItems.some((item) => item.storeId === currentStoreId)
+    );
+  }, [dishes, currentStoreId]);
+
+  const storeReviews = useMemo(() => {
+    if (currentStoreId === 'all') return reviews;
+    return reviews.filter((review) => {
+      const dish = getDishById(review.dishId);
+      if (!dish) return false;
+      return dish.storeItems.some((item) => item.storeId === currentStoreId);
+    });
+  }, [reviews, currentStoreId, getDishById]);
+
+  const getDishCover = (dish: { coverImage?: string; images?: string[] }) => {
+    return dish.coverImage || dish.images?.[0] || '';
+  };
 
   const renderStars = (rating: number) => {
     return (
@@ -61,7 +101,7 @@ export const Reviews = () => {
           </div>
           <div>
             <p className="stat-label">总评价数</p>
-            <p className="text-2xl font-bold text-earth-800">{reviews.length}</p>
+            <p className="text-2xl font-bold text-earth-800">{storeReviews.length}</p>
           </div>
         </div>
         <div className="card p-4 flex items-center gap-4">
@@ -71,7 +111,7 @@ export const Reviews = () => {
           <div>
             <p className="stat-label">好评（4-5星）</p>
             <p className="text-2xl font-bold text-green-600">
-              {reviews.filter((r) => r.rating >= 4).length}
+              {storeReviews.filter((r) => r.rating >= 4).length}
             </p>
           </div>
         </div>
@@ -82,7 +122,7 @@ export const Reviews = () => {
           <div>
             <p className="stat-label">精选评价</p>
             <p className="text-2xl font-bold text-primary-600">
-              {reviews.filter((r) => r.isFeatured).length}
+              {storeReviews.filter((r) => r.isFeatured).length}
             </p>
           </div>
         </div>
@@ -110,35 +150,39 @@ export const Reviews = () => {
           </span>
         </div>
         <div className="flex flex-wrap gap-3">
-          {dishes.slice(0, 8).map((dish) => (
-            <button
-              key={dish.id}
-              onClick={() => toggleSignature(dish.id)}
-              className={cn(
-                'flex items-center gap-2 px-4 py-2 rounded-xl border-2 transition-all',
-                dish.isSignature
-                  ? 'border-amber-400 bg-amber-50'
-                  : 'border-earth-200 hover:border-earth-300'
-              )}
-            >
-              <div className="w-8 h-8 rounded-lg bg-earth-100 overflow-hidden flex-shrink-0">
-                {dish.images[0] ? (
-                  <img src={dish.images[0]} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-earth-400">
-                    <ImageIcon className="w-4 h-4" />
-                  </div>
+          {signatureDishes.map((dish) => {
+            const dishPrice = getDishPrice(dish, currentStoreId);
+            const cover = getDishCover(dish);
+            return (
+              <button
+                key={dish.id}
+                onClick={() => toggleSignature(dish.id)}
+                className={cn(
+                  'flex items-center gap-2 px-4 py-2 rounded-xl border-2 transition-all',
+                  dish.isSignature
+                    ? 'border-amber-400 bg-amber-50'
+                    : 'border-earth-200 hover:border-earth-300'
                 )}
-              </div>
-              <div className="text-left">
-                <p className="text-sm font-medium text-earth-800">{dish.name}</p>
-                <p className="text-xs text-earth-500">¥{dish.price}</p>
-              </div>
-              {dish.isSignature && (
-                <Crown className="w-4 h-4 text-amber-500 ml-1" />
-              )}
-            </button>
-          ))}
+              >
+                <div className="w-8 h-8 rounded-lg bg-earth-100 overflow-hidden flex-shrink-0">
+                  {cover ? (
+                    <img src={cover} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-earth-400">
+                      <ImageIcon className="w-4 h-4" />
+                    </div>
+                  )}
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-medium text-earth-800">{dish.name}</p>
+                  <p className="text-xs text-earth-500">¥{dishPrice}</p>
+                </div>
+                {dish.isSignature && (
+                  <Crown className="w-4 h-4 text-amber-500 ml-1" />
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 

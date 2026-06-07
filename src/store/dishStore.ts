@@ -1,86 +1,89 @@
 import { create } from 'zustand';
-import type { Dish } from '@/types';
+import type { Dish, DishStoreItem } from '@/types';
 import { dishes as initialDishes, dishCategories } from '@/data/dishes';
-import { generateId } from '@/utils/format';
 
 interface DishState {
   dishes: Dish[];
   categories: string[];
-  selectedIds: string[];
-  searchQuery: string;
-  activeCategory: string;
+  searchKeyword: string;
+  selectedCategory: string;
   sortBy: string;
-  setSearchQuery: (query: string) => void;
-  setActiveCategory: (category: string) => void;
+  selectedDishIds: string[];
+
+  setSearchKeyword: (keyword: string) => void;
+  setSelectedCategory: (category: string) => void;
   setSortBy: (sort: string) => void;
-  toggleSelect: (id: string) => void;
+  toggleDishSelection: (id: string) => void;
+  clearSelections: () => void;
   selectAll: () => void;
-  clearSelection: () => void;
-  addDish: (dish: Partial<Dish>) => void;
+
+  addDish: (dish: Omit<Dish, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateDish: (id: string, dish: Partial<Dish>) => void;
   deleteDish: (id: string) => void;
-  toggleOnSale: (id: string) => void;
   toggleSignature: (id: string) => void;
-  batchAdjustPrice: (type: 'percentage' | 'fixed', value: number, ids?: string[]) => void;
-  batchToggleOnSale: (isOnSale: boolean, ids?: string[]) => void;
-  updateStock: (id: string, stock: number) => void;
-  getFilteredDishes: () => Dish[];
-  getMissingImages: () => Dish[];
-  getMissingPrices: () => Dish[];
-  getLowStockDishes: () => Dish[];
+
+  getDishById: (id: string) => Dish | undefined;
+  getFilteredDishes: (storeId?: string | 'all') => Dish[];
+  getDishStoreItem: (dish: Dish, storeId: string | 'all') => DishStoreItem | null;
+  getDishPrice: (dish: Dish, storeId: string | 'all') => number;
+  getDishStock: (dish: Dish, storeId: string | 'all') => number;
+  getDishOnSale: (dish: Dish, storeId: string | 'all') => boolean;
+
+  getMissingImageCount: () => number;
+  getMissingPriceCount: (storeId?: string | 'all') => number;
+  getSoldOutOnSaleCount: (storeId?: string | 'all') => number;
+  getOnSaleCount: (storeId?: string | 'all') => number;
+  getSignatureCount: (storeId?: string | 'all') => number;
+
+  batchAdjustPrice: (type: 'fixed' | 'percent', value: number, storeId: string, ids?: string[]) => void;
+  batchToggleOnSale: (isOnSale: boolean, storeId: string, ids?: string[]) => void;
+  batchUpdateStock: (stock: number, storeId: string, ids?: string[]) => void;
+
+  updateDishStoreItem: (dishId: string, storeId: string, item: Partial<DishStoreItem>) => void;
+  addDishToStore: (dishId: string, storeId: string, item: DishStoreItem) => void;
+  removeDishFromStore: (dishId: string, storeId: string) => void;
+
+  reorderImages: (dishId: string, fromIndex: number, toIndex: number) => void;
+  setCoverImage: (dishId: string, imageUrl: string) => void;
+  addImage: (dishId: string, imageUrl: string) => void;
+  removeImage: (dishId: string, imageUrl: string) => void;
 }
 
 export const useDishStore = create<DishState>((set, get) => ({
   dishes: initialDishes,
   categories: dishCategories,
-  selectedIds: [],
-  searchQuery: '',
-  activeCategory: '全部',
+  searchKeyword: '',
+  selectedCategory: '全部',
   sortBy: 'default',
+  selectedDishIds: [],
 
-  setSearchQuery: (query) => set({ searchQuery: query }),
-  setActiveCategory: (category) => set({ activeCategory: category }),
+  setSearchKeyword: (keyword) => set({ searchKeyword: keyword }),
+  setSelectedCategory: (category) => set({ selectedCategory: category }),
   setSortBy: (sort) => set({ sortBy: sort }),
 
-  toggleSelect: (id) =>
+  toggleDishSelection: (id) =>
     set((state) => ({
-      selectedIds: state.selectedIds.includes(id)
-        ? state.selectedIds.filter((i) => i !== id)
-        : [...state.selectedIds, id],
+      selectedDishIds: state.selectedDishIds.includes(id)
+        ? state.selectedDishIds.filter((i) => i !== id)
+        : [...state.selectedDishIds, id],
     })),
 
-  selectAll: () =>
-    set((state) => ({
-      selectedIds: get().getFilteredDishes().map((d) => d.id),
-    })),
+  clearSelections: () => set({ selectedDishIds: [] }),
 
-  clearSelection: () => set({ selectedIds: [] }),
+  selectAll: () => {
+    const { getFilteredDishes } = get();
+    const filtered = getFilteredDishes();
+    set({ selectedDishIds: filtered.map((d) => d.id) });
+  },
 
   addDish: (dish) => {
     const newDish: Dish = {
-      id: generateId('dish'),
-      name: dish.name || '新菜品',
-      description: dish.description || '',
-      price: dish.price || 0,
-      originalPrice: dish.originalPrice || dish.price || 0,
-      category: dish.category || '招牌菜',
-      images: dish.images || [],
-      portion: dish.portion || '',
-      spicinessLevel: dish.spicinessLevel || 0,
-      tags: dish.tags || [],
-      stock: dish.stock ?? 0,
-      stockWarning: dish.stockWarning ?? 10,
-      isLimited: dish.isLimited || false,
-      dailyLimit: dish.dailyLimit || 0,
-      isSignature: dish.isSignature || false,
-      isOnSale: dish.isOnSale || false,
-      storeIds: dish.storeIds || [],
-      views: 0,
-      favorites: 0,
+      ...dish,
+      id: `dish-${Date.now()}`,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    set((state) => ({ dishes: [newDish, ...state.dishes] }));
+    set((state) => ({ dishes: [...state.dishes, newDish] }));
   },
 
   updateDish: (id, dish) =>
@@ -93,105 +96,285 @@ export const useDishStore = create<DishState>((set, get) => ({
   deleteDish: (id) =>
     set((state) => ({
       dishes: state.dishes.filter((d) => d.id !== id),
-      selectedIds: state.selectedIds.filter((i) => i !== id),
-    })),
-
-  toggleOnSale: (id) =>
-    set((state) => ({
-      dishes: state.dishes.map((d) =>
-        d.id === id
-          ? { ...d, isOnSale: !d.isOnSale, updatedAt: new Date().toISOString() }
-          : d
-      ),
+      selectedDishIds: state.selectedDishIds.filter((i) => i !== id),
     })),
 
   toggleSignature: (id) =>
     set((state) => ({
       dishes: state.dishes.map((d) =>
-        d.id === id
-          ? { ...d, isSignature: !d.isSignature, updatedAt: new Date().toISOString() }
-          : d
+        d.id === id ? { ...d, isSignature: !d.isSignature, updatedAt: new Date().toISOString() } : d
       ),
     })),
 
-  batchAdjustPrice: (type, value, ids) => {
-    const targetIds = ids || get().selectedIds;
-    if (targetIds.length === 0) return;
+  getDishById: (id) => get().dishes.find((d) => d.id === id),
 
-    set((state) => ({
-      dishes: state.dishes.map((d) => {
-        if (!targetIds.includes(d.id)) return d;
-        let newPrice = d.price;
-        if (type === 'percentage') {
-          newPrice = Math.round(d.price * (1 + value / 100));
-        } else {
-          newPrice = Math.max(0, d.price + value);
-        }
-        return { ...d, price: newPrice, updatedAt: new Date().toISOString() };
-      }),
-    }));
+  getDishStoreItem: (dish, storeId) => {
+    if (storeId === 'all') {
+      return dish.storeItems[0] || null;
+    }
+    return dish.storeItems.find((item) => item.storeId === storeId) || null;
   },
 
-  batchToggleOnSale: (isOnSale, ids) => {
-    const targetIds = ids || get().selectedIds;
-    if (targetIds.length === 0) return;
-
-    set((state) => ({
-      dishes: state.dishes.map((d) =>
-        targetIds.includes(d.id)
-          ? { ...d, isOnSale, updatedAt: new Date().toISOString() }
-          : d
-      ),
-    }));
+  getDishPrice: (dish, storeId) => {
+    const item = get().getDishStoreItem(dish, storeId);
+    return item?.price || 0;
   },
 
-  updateStock: (id, stock) =>
-    set((state) => ({
-      dishes: state.dishes.map((d) =>
-        d.id === id ? { ...d, stock, updatedAt: new Date().toISOString() } : d
-      ),
-    })),
+  getDishStock: (dish, storeId) => {
+    const item = get().getDishStoreItem(dish, storeId);
+    return item?.stock || 0;
+  },
 
-  getFilteredDishes: () => {
-    const { dishes, searchQuery, activeCategory, sortBy } = get();
+  getDishOnSale: (dish, storeId) => {
+    if (storeId === 'all') {
+      return dish.storeItems.some((item) => item.isOnSale);
+    }
+    const item = dish.storeItems.find((i) => i.storeId === storeId);
+    return item?.isOnSale || false;
+  },
+
+  getFilteredDishes: (storeId = 'all') => {
+    const { dishes, searchKeyword, selectedCategory, sortBy } = get();
     let filtered = [...dishes];
 
-    if (searchQuery) {
-      filtered = filtered.filter(
-        (d) =>
-          d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          d.description.toLowerCase().includes(searchQuery.toLowerCase())
+    if (storeId !== 'all') {
+      filtered = filtered.filter((d) => d.storeItems.some((item) => item.storeId === storeId));
+    }
+
+    if (searchKeyword) {
+      filtered = filtered.filter((d) =>
+        d.name.toLowerCase().includes(searchKeyword.toLowerCase())
       );
     }
 
-    if (activeCategory && activeCategory !== '全部') {
-      filtered = filtered.filter((d) => d.category === activeCategory);
+    if (selectedCategory !== '全部') {
+      filtered = filtered.filter((d) => d.category === selectedCategory);
     }
 
     switch (sortBy) {
       case 'price-asc':
-        filtered.sort((a, b) => a.price - b.price);
+        filtered.sort((a, b) => {
+          const priceA = get().getDishPrice(a, storeId);
+          const priceB = get().getDishPrice(b, storeId);
+          return priceA - priceB;
+        });
         break;
       case 'price-desc':
-        filtered.sort((a, b) => b.price - a.price);
+        filtered.sort((a, b) => {
+          const priceA = get().getDishPrice(a, storeId);
+          const priceB = get().getDishPrice(b, storeId);
+          return priceB - priceA;
+        });
         break;
       case 'views':
         filtered.sort((a, b) => b.views - a.views);
         break;
-      case 'newest':
-        filtered.sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
+      case 'favorites':
+        filtered.sort((a, b) => b.favorites - a.favorites);
         break;
       default:
-        break;
+        filtered.sort((a, b) => {
+          const sortA = get().getDishStoreItem(a, storeId)?.sortOrder || 999;
+          const sortB = get().getDishStoreItem(b, storeId)?.sortOrder || 999;
+          if (sortA !== sortB) return sortA - sortB;
+          if (a.isSignature && !b.isSignature) return -1;
+          if (!a.isSignature && b.isSignature) return 1;
+          return 0;
+        });
     }
 
     return filtered;
   },
 
-  getMissingImages: () => get().dishes.filter((d) => d.images.length === 0),
-  getMissingPrices: () => get().dishes.filter((d) => d.price <= 0),
-  getLowStockDishes: () =>
-    get().dishes.filter((d) => d.stock <= d.stockWarning && d.isOnSale),
+  getMissingImageCount: () => {
+    return get().dishes.filter((d) => !d.coverImage || d.images.length === 0).length;
+  },
+
+  getMissingPriceCount: (storeId = 'all') => {
+    const { dishes } = get();
+    let count = 0;
+    for (const dish of dishes) {
+      if (storeId === 'all') {
+        if (dish.storeItems.some((item) => item.price <= 0)) {
+          count++;
+        }
+      } else {
+        const item = dish.storeItems.find((i) => i.storeId === storeId);
+        if (item && item.price <= 0) {
+          count++;
+        }
+      }
+    }
+    return count;
+  },
+
+  getSoldOutOnSaleCount: (storeId = 'all') => {
+    const { dishes } = get();
+    let count = 0;
+    for (const dish of dishes) {
+      if (storeId === 'all') {
+        if (dish.storeItems.some((item) => item.isOnSale && item.stock <= 0)) {
+          count++;
+        }
+      } else {
+        const item = dish.storeItems.find((i) => i.storeId === storeId);
+        if (item && item.isOnSale && item.stock <= 0) {
+          count++;
+        }
+      }
+    }
+    return count;
+  },
+
+  getOnSaleCount: (storeId = 'all') => {
+    const { dishes } = get();
+    if (storeId === 'all') {
+      return dishes.filter((d) => d.storeItems.some((item) => item.isOnSale)).length;
+    }
+    return dishes.filter((d) => {
+      const item = d.storeItems.find((i) => i.storeId === storeId);
+      return item?.isOnSale;
+    }).length;
+  },
+
+  getSignatureCount: (storeId = 'all') => {
+    const { dishes } = get();
+    if (storeId === 'all') {
+      return dishes.filter((d) => d.isSignature).length;
+    }
+    return dishes.filter((d) => {
+      const item = d.storeItems.find((i) => i.storeId === storeId);
+      return item && d.isSignature;
+    }).length;
+  },
+
+  batchAdjustPrice: (type, value, storeId, ids) => {
+    const { dishes, selectedDishIds } = get();
+    const targetIds = ids || selectedDishIds;
+
+    set({
+      dishes: dishes.map((dish) => {
+        if (!targetIds.includes(dish.id)) return dish;
+        const newStoreItems = dish.storeItems.map((item) => {
+          if (item.storeId !== storeId) return item;
+          let newPrice = item.price;
+          if (type === 'fixed') {
+            newPrice = Math.max(0, item.price + value);
+          } else {
+            newPrice = Math.max(0, Math.round(item.price * (1 + value / 100)));
+          }
+          return { ...item, price: newPrice };
+        });
+        return { ...dish, storeItems: newStoreItems, updatedAt: new Date().toISOString() };
+      }),
+    });
+  },
+
+  batchToggleOnSale: (isOnSale, storeId, ids) => {
+    const { dishes, selectedDishIds } = get();
+    const targetIds = ids || selectedDishIds;
+
+    set({
+      dishes: dishes.map((dish) => {
+        if (!targetIds.includes(dish.id)) return dish;
+        const newStoreItems = dish.storeItems.map((item) => {
+          if (item.storeId !== storeId) return item;
+          return { ...item, isOnSale };
+        });
+        return { ...dish, storeItems: newStoreItems, updatedAt: new Date().toISOString() };
+      }),
+    });
+  },
+
+  batchUpdateStock: (stock, storeId, ids) => {
+    const { dishes, selectedDishIds } = get();
+    const targetIds = ids || selectedDishIds;
+
+    set({
+      dishes: dishes.map((dish) => {
+        if (!targetIds.includes(dish.id)) return dish;
+        const newStoreItems = dish.storeItems.map((item) => {
+          if (item.storeId !== storeId) return item;
+          return { ...item, stock: Math.max(0, stock) };
+        });
+        return { ...dish, storeItems: newStoreItems, updatedAt: new Date().toISOString() };
+      }),
+    });
+  },
+
+  updateDishStoreItem: (dishId, storeId, item) =>
+    set((state) => ({
+      dishes: state.dishes.map((dish) => {
+        if (dish.id !== dishId) return dish;
+        const newStoreItems = dish.storeItems.map((si) =>
+          si.storeId === storeId ? { ...si, ...item } : si
+        );
+        return { ...dish, storeItems: newStoreItems, updatedAt: new Date().toISOString() };
+      }),
+    })),
+
+  addDishToStore: (dishId, storeId, item) =>
+    set((state) => ({
+      dishes: state.dishes.map((dish) => {
+        if (dish.id !== dishId) return dish;
+        if (dish.storeItems.some((si) => si.storeId === storeId)) return dish;
+        return {
+          ...dish,
+          storeItems: [...dish.storeItems, item],
+          updatedAt: new Date().toISOString(),
+        };
+      }),
+    })),
+
+  removeDishFromStore: (dishId, storeId) =>
+    set((state) => ({
+      dishes: state.dishes.map((dish) => {
+        if (dish.id !== dishId) return dish;
+        return {
+          ...dish,
+          storeItems: dish.storeItems.filter((si) => si.storeId !== storeId),
+          updatedAt: new Date().toISOString(),
+        };
+      }),
+    })),
+
+  reorderImages: (dishId, fromIndex, toIndex) =>
+    set((state) => ({
+      dishes: state.dishes.map((dish) => {
+        if (dish.id !== dishId) return dish;
+        const newImages = [...dish.images];
+        const [removed] = newImages.splice(fromIndex, 1);
+        newImages.splice(toIndex, 0, removed);
+        const newCoverImage = dish.coverImage || newImages[0] || '';
+        return { ...dish, images: newImages, coverImage: newCoverImage, updatedAt: new Date().toISOString() };
+      }),
+    })),
+
+  setCoverImage: (dishId, imageUrl) =>
+    set((state) => ({
+      dishes: state.dishes.map((dish) => {
+        if (dish.id !== dishId) return dish;
+        return { ...dish, coverImage: imageUrl, updatedAt: new Date().toISOString() };
+      }),
+    })),
+
+  addImage: (dishId, imageUrl) =>
+    set((state) => ({
+      dishes: state.dishes.map((dish) => {
+        if (dish.id !== dishId) return dish;
+        const newImages = [...dish.images, imageUrl];
+        const newCoverImage = dish.coverImage || imageUrl;
+        return { ...dish, images: newImages, coverImage: newCoverImage, updatedAt: new Date().toISOString() };
+      }),
+    })),
+
+  removeImage: (dishId, imageUrl) =>
+    set((state) => ({
+      dishes: state.dishes.map((dish) => {
+        if (dish.id !== dishId) return dish;
+        const newImages = dish.images.filter((img) => img !== imageUrl);
+        const newCoverImage = dish.coverImage === imageUrl ? (newImages[0] || '') : dish.coverImage;
+        return { ...dish, images: newImages, coverImage: newCoverImage, updatedAt: new Date().toISOString() };
+      }),
+    })),
 }));

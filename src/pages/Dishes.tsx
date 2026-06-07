@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { useDishStore } from '@/store/dishStore';
 import { useUIStore } from '@/store/uiStore';
+import { useStoreStore } from '@/store/storeStore';
+import { useActivityStore } from '@/store/activityStore';
 import { DishCard } from '@/components/business/DishCard';
 import { DishFormModal } from '@/components/business/DishFormModal';
 import { cn, formatPrice } from '@/utils/format';
@@ -22,42 +24,66 @@ import { exportDishDetails } from '@/utils/export';
 export const Dishes = () => {
   const {
     getFilteredDishes,
-    searchQuery,
-    setSearchQuery,
-    activeCategory,
-    setActiveCategory,
+    searchKeyword,
+    setSearchKeyword,
+    selectedCategory,
+    setSelectedCategory,
     sortBy,
     setSortBy,
     categories,
-    selectedIds,
-    toggleSelect,
-    selectAll,
-    clearSelection,
+    selectedDishIds,
+    toggleDishSelection,
+    clearSelections,
     batchAdjustPrice,
     batchToggleOnSale,
-    getMissingImages,
-    getMissingPrices,
-    getLowStockDishes,
+    getMissingImageCount,
+    getMissingPriceCount,
+    getOnSaleCount,
+    getDishStoreItem,
     dishes,
   } = useDishStore();
-  const { openDishModal } = useUIStore();
+  const { openDishModal, currentStoreId } = useUIStore();
+  const { stores } = useStoreStore();
+  const { activities } = useActivityStore();
 
   const [showBatchPanel, setShowBatchPanel] = useState(false);
   const [batchPriceType, setBatchPriceType] = useState<'percentage' | 'fixed'>('percentage');
   const [batchPriceValue, setBatchPriceValue] = useState('10');
 
-  const filteredDishes = getFilteredDishes();
-  const missingImages = getMissingImages();
-  const missingPrices = getMissingPrices();
-  const lowStockDishes = getLowStockDishes();
+  const filteredDishes = getFilteredDishes(currentStoreId);
+  const missingImageCount = getMissingImageCount();
+  const missingPriceCount = getMissingPriceCount(currentStoreId);
+  const onSaleCount = getOnSaleCount(currentStoreId);
 
   const allCategories = ['全部', ...categories];
 
+  const isAllStores = currentStoreId === 'all';
+
+  const lowStockDishes = filteredDishes.filter((dish) => {
+    const storeItem = getDishStoreItem(dish, currentStoreId);
+    if (!storeItem) return false;
+    return storeItem.stock <= storeItem.stockWarning && storeItem.isOnSale;
+  });
+
   const handleBatchAdjust = () => {
+    if (isAllStores) return;
     const value = Number(batchPriceValue);
     if (isNaN(value)) return;
-    batchAdjustPrice(batchPriceType, batchPriceType === 'percentage' ? value : value);
+    batchAdjustPrice(batchPriceType === 'percentage' ? 'percent' : 'fixed', value, currentStoreId);
     setShowBatchPanel(false);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedDishIds.length === filteredDishes.length) {
+      clearSelections();
+    } else {
+      useDishStore.setState({ selectedDishIds: filteredDishes.map((d) => d.id) });
+    }
+  };
+
+  const handleBatchToggleOnSale = (isOnSale: boolean) => {
+    if (isAllStores) return;
+    batchToggleOnSale(isOnSale, currentStoreId);
   };
 
   return (
@@ -78,7 +104,7 @@ export const Dishes = () => {
           </div>
           <div>
             <p className="stat-label">缺少图片</p>
-            <p className="text-2xl font-bold text-red-600">{missingImages.length}</p>
+            <p className="text-2xl font-bold text-red-600">{missingImageCount}</p>
           </div>
         </div>
         <div className="card p-4 flex items-center gap-4">
@@ -87,7 +113,7 @@ export const Dishes = () => {
           </div>
           <div>
             <p className="stat-label">缺少价格</p>
-            <p className="text-2xl font-bold text-amber-600">{missingPrices.length}</p>
+            <p className="text-2xl font-bold text-amber-600">{missingPriceCount}</p>
           </div>
         </div>
         <div className="card p-4 flex items-center gap-4">
@@ -96,9 +122,7 @@ export const Dishes = () => {
           </div>
           <div>
             <p className="stat-label">在售菜品</p>
-            <p className="text-2xl font-bold text-green-600">
-              {dishes.filter((d) => d.isOnSale).length}
-            </p>
+            <p className="text-2xl font-bold text-green-600">{onSaleCount}</p>
           </div>
         </div>
       </div>
@@ -112,8 +136,8 @@ export const Dishes = () => {
                 type="text"
                 placeholder="搜索菜品名称..."
                 className="input-field pl-10 py-2 w-64"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
               />
             </div>
 
@@ -121,10 +145,10 @@ export const Dishes = () => {
               {allCategories.map((cat) => (
                 <button
                   key={cat}
-                  onClick={() => setActiveCategory(cat)}
+                  onClick={() => setSelectedCategory(cat)}
                   className={cn(
                     'px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
-                    activeCategory === cat
+                    selectedCategory === cat
                       ? 'bg-white text-primary-600 shadow-sm'
                       : 'text-earth-500 hover:text-earth-700'
                   )}
@@ -141,14 +165,16 @@ export const Dishes = () => {
                 onClick={() => setShowBatchPanel(!showBatchPanel)}
                 className={cn(
                   'btn-secondary flex items-center gap-2',
-                  selectedIds.length > 0 && 'border-primary-400 text-primary-600'
+                  selectedDishIds.length > 0 && 'border-primary-400 text-primary-600',
+                  isAllStores && 'opacity-50 cursor-not-allowed'
                 )}
+                disabled={isAllStores}
               >
                 <Filter className="w-4 h-4" />
                 批量操作
-                {selectedIds.length > 0 && (
+                {selectedDishIds.length > 0 && (
                   <span className="px-1.5 py-0.5 bg-primary-500 text-white text-xs rounded-full">
-                    {selectedIds.length}
+                    {selectedDishIds.length}
                   </span>
                 )}
               </button>
@@ -156,6 +182,15 @@ export const Dishes = () => {
               {showBatchPanel && (
                 <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-2xl shadow-xl border border-earth-100 p-4 z-20 animate-slide-up">
                   <h4 className="font-semibold text-earth-800 mb-3">批量操作</h4>
+
+                  {isAllStores && (
+                    <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                      <p className="text-sm text-amber-700 flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        请先选择具体门店后再进行批量操作
+                      </p>
+                    </div>
+                  )}
 
                   <div className="space-y-3 mb-4">
                     <div>
@@ -191,11 +226,12 @@ export const Dishes = () => {
                           placeholder={batchPriceType === 'percentage' ? '如：10 表示涨价10%' : '如：5 表示涨价5元'}
                           value={batchPriceValue}
                           onChange={(e) => setBatchPriceValue(e.target.value)}
+                          disabled={isAllStores}
                         />
                         <button
                           onClick={handleBatchAdjust}
                           className="btn-primary py-2 px-4"
-                          disabled={selectedIds.length === 0}
+                          disabled={selectedDishIds.length === 0 || isAllStores}
                         >
                           应用
                         </button>
@@ -204,16 +240,16 @@ export const Dishes = () => {
 
                     <div className="flex gap-2">
                       <button
-                        onClick={() => batchToggleOnSale(true)}
+                        onClick={() => handleBatchToggleOnSale(true)}
                         className="flex-1 py-2 text-sm bg-green-50 text-green-600 rounded-xl hover:bg-green-100 transition-colors"
-                        disabled={selectedIds.length === 0}
+                        disabled={selectedDishIds.length === 0 || isAllStores}
                       >
                         批量上架
                       </button>
                       <button
-                        onClick={() => batchToggleOnSale(false)}
+                        onClick={() => handleBatchToggleOnSale(false)}
                         className="flex-1 py-2 text-sm bg-earth-50 text-earth-600 rounded-xl hover:bg-earth-100 transition-colors"
-                        disabled={selectedIds.length === 0}
+                        disabled={selectedDishIds.length === 0 || isAllStores}
                       >
                         批量下架
                       </button>
@@ -222,14 +258,16 @@ export const Dishes = () => {
 
                   <div className="flex justify-between pt-3 border-t border-earth-100">
                     <button
-                      onClick={clearSelection}
+                      onClick={clearSelections}
                       className="text-sm text-earth-500 hover:text-earth-700"
+                      disabled={isAllStores}
                     >
                       清空选择
                     </button>
                     <button
-                      onClick={selectAll}
+                      onClick={handleSelectAll}
                       className="text-sm text-primary-600 hover:text-primary-700"
+                      disabled={isAllStores}
                     >
                       全选当前
                     </button>
@@ -258,7 +296,12 @@ export const Dishes = () => {
             </select>
 
             <button
-              onClick={() => exportDishDetails(dishes)}
+              onClick={() => exportDishDetails({
+                storeId: currentStoreId,
+                stores,
+                dishes,
+                activities,
+              })}
               className="btn-secondary flex items-center gap-2"
             >
               <Download className="w-4 h-4" />
@@ -280,14 +323,17 @@ export const Dishes = () => {
             库存预警（{lowStockDishes.length} 项）
           </div>
           <div className="flex flex-wrap gap-2">
-            {lowStockDishes.map((dish) => (
-              <span
-                key={dish.id}
-                className="px-3 py-1 bg-white border border-red-200 rounded-full text-sm text-red-600"
-              >
-                {dish.name} - 仅剩 {dish.stock} 份
-              </span>
-            ))}
+            {lowStockDishes.map((dish) => {
+              const storeItem = getDishStoreItem(dish, currentStoreId);
+              return (
+                <span
+                  key={dish.id}
+                  className="px-3 py-1 bg-white border border-red-200 rounded-full text-sm text-red-600"
+                >
+                  {dish.name} - 仅剩 {storeItem?.stock || 0} 份
+                </span>
+              );
+            })}
           </div>
         </div>
       )}
@@ -295,20 +341,14 @@ export const Dishes = () => {
       <div className="flex items-center justify-between">
         <p className="text-sm text-earth-500">
           共 {filteredDishes.length} 道菜品
-          {selectedIds.length > 0 && `，已选择 ${selectedIds.length} 道`}
+          {selectedDishIds.length > 0 && `，已选择 ${selectedDishIds.length} 道`}
         </p>
-        {selectedIds.length > 0 && (
+        {selectedDishIds.length > 0 && (
           <button
-            onClick={() => {
-              if (selectedIds.length === filteredDishes.length) {
-                clearSelection();
-              } else {
-                selectAll();
-              }
-            }}
+            onClick={handleSelectAll}
             className="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1"
           >
-            {selectedIds.length === filteredDishes.length ? (
+            {selectedDishIds.length === filteredDishes.length ? (
               <>
                 <CheckSquare className="w-4 h-4" />
                 取消全选
@@ -328,8 +368,8 @@ export const Dishes = () => {
           <DishCard
             key={dish.id}
             dish={dish}
-            selected={selectedIds.includes(dish.id)}
-            onSelect={() => toggleSelect(dish.id)}
+            selected={selectedDishIds.includes(dish.id)}
+            onSelect={() => !isAllStores && toggleDishSelection(dish.id)}
           />
         ))}
       </div>

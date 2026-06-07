@@ -1,37 +1,48 @@
-export interface Dish {
-  id: string;
-  name: string;
-  description: string;
+export interface DishStoreItem {
+  storeId: string;
   price: number;
   originalPrice: number;
-  category: string;
-  images: string[];
-  portion: string;
-  spicinessLevel: number;
-  tags: string[];
   stock: number;
   stockWarning: number;
   isLimited: boolean;
   dailyLimit: number;
-  isSignature: boolean;
   isOnSale: boolean;
-  storeIds: string[];
+  sortOrder: number;
+}
+
+export interface Dish {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  images: string[];
+  coverImage: string;
+  portion: string;
+  spicinessLevel: number;
+  tags: string[];
+  isSignature: boolean;
+  storeItems: DishStoreItem[];
   views: number;
   favorites: number;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface ComboStoreItem {
+  storeId: string;
+  price: number;
+  originalPrice: number;
+  isOnSale: boolean;
+  sortOrder: number;
+}
+
 export interface Combo {
   id: string;
   name: string;
   description: string;
-  price: number;
-  originalPrice: number;
   dishIds: string[];
   image: string;
-  isOnSale: boolean;
-  sortOrder: number;
+  storeItems: ComboStoreItem[];
   createdAt: string;
 }
 
@@ -93,3 +104,10 @@ export type PageType =
   | 'activities'
   | 'reviews'
   | 'preview';
+
+export interface PublishCheckResult {
+  missingImages: Dish[];
+  missingPrices: { dish: Dish; storeId: string }[];
+  soldOutOnSale: { dish: Dish; storeId: string }[];
+  totalIssues: number;
+}

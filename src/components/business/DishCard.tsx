@@ -24,27 +24,44 @@ interface DishCardProps {
 }
 
 export const DishCard = ({ dish, selected, onSelect }: DishCardProps) => {
-  const { toggleOnSale, toggleSignature, deleteDish } = useDishStore();
-  const { openDishModal } = useUIStore();
+  const { updateDishStoreItem, toggleSignature, deleteDish } = useDishStore();
+  const { openDishModal, currentStoreId } = useUIStore();
   const { tags } = useTagStore();
+
+  const storeItem = useDishStore((state) => state.getDishStoreItem(dish, currentStoreId));
+  const price = storeItem?.price || 0;
+  const originalPrice = storeItem?.originalPrice || 0;
+  const stock = storeItem?.stock || 0;
+  const isOnSale = storeItem?.isOnSale || false;
+  const isLimited = storeItem?.isLimited || false;
+  const dailyLimit = storeItem?.dailyLimit || 0;
+  const stockWarning = storeItem?.stockWarning || 0;
 
   const dishTags = dish.tags
     .map((tagId) => tags.find((t) => t.id === tagId))
     .filter(Boolean)
     .slice(0, 3);
 
-  const hasMissingImage = dish.images.length === 0;
-  const hasMissingPrice = dish.price <= 0;
+  const hasMissingImage = !dish.coverImage || dish.images.length === 0;
+  const hasMissingPrice = price <= 0;
   const hasIssue = hasMissingImage || hasMissingPrice;
 
-  const isLowStock = dish.stock <= dish.stockWarning && dish.isOnSale;
+  const isLowStock = stock <= stockWarning && isOnSale;
+
+  const handleToggleOnSale = () => {
+    if (storeItem) {
+      updateDishStoreItem(dish.id, storeItem.storeId, { isOnSale: !isOnSale });
+    }
+  };
+
+  const displayImage = dish.coverImage || dish.images[0];
 
   return (
     <div
       className={cn(
         'card card-hover overflow-hidden relative group',
         selected && 'ring-2 ring-primary-500 ring-offset-2',
-        !dish.isOnSale && 'opacity-70'
+        !isOnSale && 'opacity-70'
       )}
     >
       {onSelect && (
@@ -79,7 +96,15 @@ export const DishCard = ({ dish, selected, onSelect }: DishCardProps) => {
         </div>
       )}
 
-      {!dish.isOnSale && (
+      {isLowStock && (
+        <div className="absolute top-3 left-10 z-10">
+          <div className="px-2 py-1 bg-amber-500 text-white text-xs font-medium rounded-lg">
+            库存紧张
+          </div>
+        </div>
+      )}
+
+      {!isOnSale && (
         <div className="absolute inset-0 z-5 bg-black/10 flex items-center justify-center">
           <span className="px-3 py-1.5 bg-earth-700 text-white text-sm font-medium rounded-full">
             已下架
@@ -91,9 +116,9 @@ export const DishCard = ({ dish, selected, onSelect }: DishCardProps) => {
         className="aspect-[4/3] bg-earth-100 relative overflow-hidden cursor-pointer"
         onClick={() => openDishModal(dish.id)}
       >
-        {dish.images[0] ? (
+        {displayImage ? (
           <img
-            src={dish.images[0]}
+            src={displayImage}
             alt={dish.name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           />
@@ -104,12 +129,12 @@ export const DishCard = ({ dish, selected, onSelect }: DishCardProps) => {
           </div>
         )}
 
-        {dish.isLimited && dish.isOnSale && (
+        {isLimited && isOnSale && (
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3">
             <div className="flex items-center gap-1.5 text-white text-sm">
               <Package className="w-4 h-4" />
               <span>
-                限量 {dish.dailyLimit} 份 / 剩余 {dish.stock} 份
+                限量 {dailyLimit} 份 / 剩余 {stock} 份
               </span>
             </div>
           </div>
@@ -126,11 +151,11 @@ export const DishCard = ({ dish, selected, onSelect }: DishCardProps) => {
           </div>
           <div className="text-right">
             <div className="text-lg font-bold text-primary-600">
-              {formatPrice(dish.price)}
+              {price > 0 ? formatPrice(price) : '未定价'}
             </div>
-            {dish.originalPrice > dish.price && dish.price > 0 && (
+            {originalPrice > price && price > 0 && (
               <div className="text-xs text-earth-400 line-through">
-                {formatPrice(dish.originalPrice)}
+                {formatPrice(originalPrice)}
               </div>
             )}
           </div>
@@ -176,11 +201,11 @@ export const DishCard = ({ dish, selected, onSelect }: DishCardProps) => {
         <div className="flex items-center justify-between pt-3 border-t border-earth-100">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => toggleOnSale(dish.id)}
+              onClick={handleToggleOnSale}
               className="p-1.5 rounded-lg hover:bg-warm-100 transition-colors"
-              title={dish.isOnSale ? '点击下架' : '点击上架'}
+              title={isOnSale ? '点击下架' : '点击上架'}
             >
-              {dish.isOnSale ? (
+              {isOnSale ? (
                 <ToggleRight className="w-5 h-5 text-primary-500" />
               ) : (
                 <ToggleLeft className="w-5 h-5 text-earth-400" />
